@@ -1773,14 +1773,6 @@ def test_sync_messages_raw_response_stream_wrap_failure_not_raised(
     assert len(span_exporter.get_finished_spans()) == 1
 
 
-@pytest.mark.skip(
-    reason="Known gap, tracked in #389: the SDK's "
-    "ResponseContextManager.__exit__ discards the caller's exception before "
-    "closing the response, so the proxy never sees it and the span is "
-    "finalized as a success. Fixing it means instrumenting "
-    "MessagesWithStreamingResponse.create and wrapping the context manager "
-    "itself, which is a new patch target and out of scope here."
-)
 @pytest.mark.vcr()
 @pytest.mark.cassette("test_sync_messages_create_streaming_with_raw_response")
 def test_sync_messages_with_streaming_response_user_exception(

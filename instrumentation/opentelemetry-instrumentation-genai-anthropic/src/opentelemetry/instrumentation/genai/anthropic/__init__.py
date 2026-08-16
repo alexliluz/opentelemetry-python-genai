@@ -52,8 +52,10 @@ from .package import _instruments
 from .patch import (
     async_messages_create,
     async_messages_stream,
+    async_messages_with_streaming_response_init,
     messages_create,
     messages_stream,
+    messages_with_streaming_response_init,
 )
 
 
@@ -134,6 +136,16 @@ class AnthropicInstrumentor(BaseInstrumentor):
             "AsyncMessages.stream",
             async_messages_stream(handler),
         )
+        wrap_function_wrapper(
+            "anthropic.resources.messages",
+            "MessagesWithStreamingResponse.__init__",
+            messages_with_streaming_response_init,
+        )
+        wrap_function_wrapper(
+            "anthropic.resources.messages",
+            "AsyncMessagesWithStreamingResponse.__init__",
+            async_messages_with_streaming_response_init,
+        )
 
         # parse() wraps create() internally in the Anthropic SDK and returns a
         # parsed message whose telemetry-relevant fields match Message, so the
@@ -173,6 +185,14 @@ class AnthropicInstrumentor(BaseInstrumentor):
         unwrap(
             anthropic.resources.messages.AsyncMessages,  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownArgumentType]
             "stream",
+        )
+        unwrap(
+            anthropic.resources.messages.MessagesWithStreamingResponse,  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownArgumentType]
+            "__init__",
+        )
+        unwrap(
+            anthropic.resources.messages.AsyncMessagesWithStreamingResponse,  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownArgumentType]
+            "__init__",
         )
         if self._parse_supported:
             unwrap(

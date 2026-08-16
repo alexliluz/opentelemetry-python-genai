@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, cast
@@ -27,8 +28,10 @@ from .messages_extractors import (
 )
 from .utils import is_anthropic_async_stream, is_anthropic_stream
 from .wrappers import (
+    AsyncMessagesStreamingResponseContextManagerWrapper,
     AsyncMessagesStreamManagerWrapper,
     AsyncMessagesStreamWrapper,
+    MessagesStreamingResponseContextManagerWrapper,
     MessagesStreamManagerWrapper,
     MessagesStreamWrapper,
     MessageWrapper,
@@ -47,6 +50,58 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 ANTHROPIC = "anthropic"
+
+
+def _wrap_streaming_response_create(
+    create: Callable[..., Any],
+) -> Callable[..., Any]:
+    """Wrap an SDK ``with_streaming_response.create`` bound method."""
+
+    @functools.wraps(create)
+    def traced_create(*args: Any, **kwargs: Any) -> Any:
+        return MessagesStreamingResponseContextManagerWrapper(
+            create(*args, **kwargs)
+        )
+
+    return traced_create
+
+
+def _wrap_async_streaming_response_create(
+    create: Callable[..., Any],
+) -> Callable[..., Any]:
+    """Wrap an async SDK ``with_streaming_response.create`` bound method."""
+
+    @functools.wraps(create)
+    def traced_create(*args: Any, **kwargs: Any) -> Any:
+        return AsyncMessagesStreamingResponseContextManagerWrapper(
+            create(*args, **kwargs)
+        )
+
+    return traced_create
+
+
+def messages_with_streaming_response_init(
+    wrapped: Callable[..., Any],
+    instance: Any,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> Any:
+    """Instrument the dynamically-created sync streaming ``create`` method."""
+    result = wrapped(*args, **kwargs)
+    instance.create = _wrap_streaming_response_create(instance.create)
+    return result
+
+
+def async_messages_with_streaming_response_init(
+    wrapped: Callable[..., Any],
+    instance: Any,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> Any:
+    """Instrument the dynamically-created async streaming ``create`` method."""
+    result = wrapped(*args, **kwargs)
+    instance.create = _wrap_async_streaming_response_create(instance.create)
+    return result
 
 
 def _is_raw_response(result: object) -> bool:

@@ -1523,14 +1523,6 @@ async def test_async_messages_raw_response_parse_after_exit(
     assert message.model == model
 
 
-@pytest.mark.skip(
-    reason="Known gap, tracked in #389: the SDK's "
-    "AsyncResponseContextManager.__aexit__ discards the caller's exception "
-    "before closing the response, so the proxy never sees it and the span is "
-    "finalized as a success. Fixing it means instrumenting "
-    "AsyncMessagesWithStreamingResponse.create and wrapping the context "
-    "manager itself, which is a new patch target and out of scope here."
-)
 @pytest.mark.cassette("test_async_messages_create_streaming_with_raw_response")
 @pytest.mark.asyncio
 @pytest.mark.vcr()
