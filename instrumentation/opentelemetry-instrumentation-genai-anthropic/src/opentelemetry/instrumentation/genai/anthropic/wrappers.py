@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import logging
+from collections.abc import Awaitable, Callable
 from types import TracebackType
 from typing import (
     TYPE_CHECKING,
@@ -52,6 +53,7 @@ ResponseT = TypeVar("ResponseT")
 ResponseT_co = TypeVar("ResponseT_co", covariant=True)
 ResponseFormatT = TypeVar("ResponseFormatT")
 accumulate_event = cast("Callable[..., Message] | None", _sdk_accumulate_event)
+_logger = logging.getLogger(__name__)
 
 
 class _StreamWrapperWithStream(Protocol):
@@ -71,14 +73,27 @@ class _SyncResponseContextManager(Protocol[ResponseT_co]):
 
 
 class _AsyncResponseContextManager(Protocol[ResponseT_co]):
-    async def __aenter__(self) -> ResponseT_co: ...
+    def __aenter__(self) -> Awaitable[ResponseT_co]: ...
 
-    async def __aexit__(
+    def __aexit__(
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
-    ) -> Any: ...
+    ) -> Awaitable[Any]: ...
+
+
+def _fail_response(response: object | None, error: BaseException) -> None:
+    fail = getattr(response, "_fail", None)
+    if not callable(fail):
+        return
+    try:
+        fail(error)
+    except Exception:
+        _logger.debug(
+            "Failed to record an exception from a streaming response",
+            exc_info=True,
+        )
 
 
 def _set_response_attributes(
@@ -145,9 +160,7 @@ class MessagesStreamingResponseContextManagerWrapper(Generic[ResponseT]):
         exc_tb: TracebackType | None,
     ) -> Any:
         if exc_val is not None:
-            fail = getattr(self._response, "_fail", None)
-            if fail is not None:
-                fail(exc_val)
+            _fail_response(self._response, exc_val)
         return self._manager.__exit__(exc_type, exc_val, exc_tb)
 
     def __getattr__(self, name: str) -> Any:
@@ -172,9 +185,7 @@ class AsyncMessagesStreamingResponseContextManagerWrapper(Generic[ResponseT]):
         exc_tb: TracebackType | None,
     ) -> Any:
         if exc_val is not None:
-            fail = getattr(self._response, "_fail", None)
-            if fail is not None:
-                fail(exc_val)
+            _fail_response(self._response, exc_val)
         return await self._manager.__aexit__(exc_type, exc_val, exc_tb)
 
     def __getattr__(self, name: str) -> Any:

@@ -69,7 +69,7 @@ def _wrap_streaming_response_create(
 def _wrap_async_streaming_response_create(
     create: Callable[..., Any],
 ) -> Callable[..., Any]:
-    """Wrap an async SDK ``with_streaming_response.create`` bound method."""
+    """Wrap ``Async*WithStreamingResponse.create``, which returns an async context manager."""
 
     @functools.wraps(create)
     def traced_create(*args: Any, **kwargs: Any) -> Any:
