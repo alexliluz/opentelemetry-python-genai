@@ -555,6 +555,40 @@ def test_uninstrument_removes_patching(
     assert True
 
 
+def test_sync_streaming_response_type_survives_instrumentation_round_trip(
+    tracer_provider, logger_provider, meter_provider
+):
+    """Instrumenting and uninstrumenting keeps the SDK manager type intact."""
+    instrumentor = AnthropicInstrumentor()
+    client = Anthropic()
+
+    def create_context_manager():
+        return client.messages.with_streaming_response.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=100,
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+        )
+
+    instrumentor.instrument(
+        tracer_provider=tracer_provider,
+        logger_provider=logger_provider,
+        meter_provider=meter_provider,
+    )
+    try:
+        assert create_context_manager().__class__ is ResponseContextManager
+        instrumentor.uninstrument()
+        assert create_context_manager().__class__ is ResponseContextManager
+        instrumentor.instrument(
+            tracer_provider=tracer_provider,
+            logger_provider=logger_provider,
+            meter_provider=meter_provider,
+        )
+        assert create_context_manager().__class__ is ResponseContextManager
+    finally:
+        instrumentor.uninstrument()
+
+
 def test_multiple_instrument_uninstrument_cycles(
     tracer_provider, logger_provider, meter_provider
 ):

@@ -15,7 +15,10 @@ from anthropic._streaming import AsyncStream as AnthropicAsyncStream
 from anthropic.resources.messages import AsyncMessages as _AsyncMessages
 from anthropic.types import Message
 
-from opentelemetry.instrumentation.genai.anthropic import _raw_response
+from opentelemetry.instrumentation.genai.anthropic import (
+    AnthropicInstrumentor,
+    _raw_response,
+)
 from opentelemetry.instrumentation.genai.anthropic._raw_response import (
     RawResponseProxy,
 )
@@ -1605,6 +1608,52 @@ async def test_async_messages_with_raw_response_api_error(
     span = spans[0]
     assert span.attributes[GenAIAttributes.GEN_AI_REQUEST_MODEL] == model
     assert "NotFoundError" in span.attributes[ErrorAttributes.ERROR_TYPE]
+
+
+@pytest.mark.asyncio
+async def test_async_streaming_response_type_survives_instrumentation_round_trip(
+    tracer_provider, logger_provider, meter_provider
+):
+    """Async instrumentation round-trips keep the SDK manager type intact."""
+    instrumentor = AnthropicInstrumentor()
+    client = AsyncAnthropic()
+
+    def create_context_manager():
+        context_manager = client.messages.with_streaming_response.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=100,
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+        )
+        request = getattr(context_manager, "_api_request", None)
+        if inspect.iscoroutine(request):
+            request.close()
+        return context_manager
+
+    instrumentor.instrument(
+        tracer_provider=tracer_provider,
+        logger_provider=logger_provider,
+        meter_provider=meter_provider,
+    )
+    try:
+        assert (
+            create_context_manager().__class__ is AsyncResponseContextManager
+        )
+        instrumentor.uninstrument()
+        assert (
+            create_context_manager().__class__ is AsyncResponseContextManager
+        )
+        instrumentor.instrument(
+            tracer_provider=tracer_provider,
+            logger_provider=logger_provider,
+            meter_provider=meter_provider,
+        )
+        assert (
+            create_context_manager().__class__ is AsyncResponseContextManager
+        )
+    finally:
+        instrumentor.uninstrument()
+        await client.close()
 
 
 @pytest.mark.cassette("test_async_messages_create_with_raw_response")
