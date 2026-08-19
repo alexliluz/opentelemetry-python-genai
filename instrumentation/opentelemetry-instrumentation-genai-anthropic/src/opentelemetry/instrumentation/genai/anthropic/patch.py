@@ -170,7 +170,11 @@ def async_messages_create(
     | AnthropicAsyncStream[RawMessageStreamEvent]
     | AsyncMessagesStreamWrapper[None],
 ]:
-    """Wrap the async `create` method of the `AsyncMessages` class."""
+    """Wrap `AsyncMessages.with_streaming_response.create`.
+
+    The method itself is synchronous: it returns an async context manager that
+    is entered with ``async with``.
+    """
     capture_content = handler.should_capture_content()
 
     async def traced_method(
