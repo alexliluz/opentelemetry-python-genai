@@ -1841,6 +1841,47 @@ def test_sync_messages_with_streaming_response_user_exception(
 
 
 @pytest.mark.vcr()
+@pytest.mark.cassette("test_sync_messages_create_streaming_with_raw_response")
+def test_sync_messages_with_streaming_response_user_exception_before_parse(
+    span_exporter, anthropic_client, instrument_no_content
+):
+    """A caller error before parsing still fails the raw-response span once."""
+    with pytest.raises(ValueError, match="User raised exception"):
+        with anthropic_client.messages.with_streaming_response.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=100,
+            messages=[{"role": "user", "content": "Say hello in one word."}],
+            stream=True,
+        ):
+            raise ValueError("User raised exception")
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].attributes[ErrorAttributes.ERROR_TYPE] == "ValueError"
+
+
+@pytest.mark.vcr()
+@pytest.mark.cassette("test_sync_messages_create_streaming_with_raw_response")
+def test_sync_messages_with_streaming_response_user_exception_after_drain(
+    span_exporter, anthropic_client, instrument_no_content
+):
+    """A caller error after draining does not finalize the span twice."""
+    with pytest.raises(ValueError, match="User raised exception"):
+        with anthropic_client.messages.with_streaming_response.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=100,
+            messages=[{"role": "user", "content": "Say hello in one word."}],
+            stream=True,
+        ) as raw_response:
+            list(raw_response.parse())
+            raise ValueError("User raised exception")
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert ErrorAttributes.ERROR_TYPE not in spans[0].attributes
+
+
+@pytest.mark.vcr()
 @pytest.mark.cassette("test_sync_messages_create_with_raw_response")
 def test_sync_messages_with_streaming_response_nonstreaming_user_exception(
     span_exporter, anthropic_client, instrument_no_content
@@ -1859,6 +1900,27 @@ def test_sync_messages_with_streaming_response_nonstreaming_user_exception(
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 1
     assert spans[0].attributes[ErrorAttributes.ERROR_TYPE] == "ValueError"
+
+
+@pytest.mark.vcr()
+@pytest.mark.cassette("test_sync_messages_create_with_raw_response")
+def test_sync_messages_with_raw_response_caller_exception(
+    span_exporter, anthropic_client, instrument_no_content
+):
+    """A caller error while handling a raw response is separate from the call."""
+    raw_response = anthropic_client.messages.with_raw_response.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=100,
+        messages=[{"role": "user", "content": "Say hello in one word."}],
+    )
+
+    with pytest.raises(ValueError, match="User raised exception"):
+        raise ValueError("User raised exception")
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert ErrorAttributes.ERROR_TYPE not in spans[0].attributes
+    assert raw_response.headers is not None
 
 
 @pytest.mark.vcr()
