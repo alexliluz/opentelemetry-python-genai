@@ -10,7 +10,7 @@ import httpx
 import pytest
 from anthropic import APIConnectionError, AsyncAnthropic, NotFoundError
 from anthropic._legacy_response import LegacyAPIResponse
-from anthropic._response import AsyncAPIResponse
+from anthropic._response import AsyncAPIResponse, AsyncResponseContextManager
 from anthropic._streaming import AsyncStream as AnthropicAsyncStream
 from anthropic.resources.messages import AsyncMessages as _AsyncMessages
 from anthropic.types import Message
@@ -1558,6 +1558,32 @@ async def test_async_messages_with_streaming_response_user_exception(
     assert span.attributes[ErrorAttributes.ERROR_TYPE] == "ValueError"
 
 
+@pytest.mark.cassette("test_async_messages_create_with_raw_response")
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_async_messages_with_streaming_response_nonstreaming_user_exception(
+    span_exporter, async_anthropic_client, instrument_no_content
+):
+    """A caller error in a non-streaming async response context fails the span."""
+    model = "claude-sonnet-4-20250514"
+
+    with pytest.raises(ValueError, match="User raised exception"):
+        async with (
+            async_anthropic_client.messages.with_streaming_response.create(
+                model=model,
+                max_tokens=100,
+                messages=[
+                    {"role": "user", "content": "Say hello in one word."}
+                ],
+            )
+        ):
+            raise ValueError("User raised exception")
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].attributes[ErrorAttributes.ERROR_TYPE] == "ValueError"
+
+
 @pytest.mark.cassette("test_async_messages_create_api_error")
 @pytest.mark.asyncio
 @pytest.mark.vcr()
@@ -1607,12 +1633,17 @@ async def test_async_messages_streaming_response_is_transparent(
     span_exporter, async_anthropic_client, instrument_no_content
 ):
     """The streaming proxy must also keep the SDK's type and its parsed stream."""
-    async with async_anthropic_client.messages.with_streaming_response.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=100,
-        messages=[{"role": "user", "content": "Say hello in one word."}],
-        stream=True,
-    ) as raw_response:
+    context_manager = (
+        async_anthropic_client.messages.with_streaming_response.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=100,
+            messages=[{"role": "user", "content": "Say hello in one word."}],
+            stream=True,
+        )
+    )
+    assert isinstance(context_manager, AsyncResponseContextManager)
+    assert context_manager.__class__ is AsyncResponseContextManager
+    async with context_manager as raw_response:
         assert isinstance(raw_response, AsyncAPIResponse)
         assert raw_response.__class__ is AsyncAPIResponse
         stream = await raw_response.parse()

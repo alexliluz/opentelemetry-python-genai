@@ -52,10 +52,10 @@ from .package import _instruments
 from .patch import (
     async_messages_create,
     async_messages_stream,
-    async_messages_with_streaming_response_init,
+    async_response_context_manager_exit,
     messages_create,
     messages_stream,
-    messages_with_streaming_response_init,
+    response_context_manager_exit,
 )
 
 
@@ -137,14 +137,14 @@ class AnthropicInstrumentor(BaseInstrumentor):
             async_messages_stream(handler),
         )
         wrap_function_wrapper(
-            "anthropic.resources.messages",
-            "MessagesWithStreamingResponse.__init__",
-            messages_with_streaming_response_init,
+            "anthropic._response",
+            "ResponseContextManager.__exit__",
+            response_context_manager_exit,
         )
         wrap_function_wrapper(
-            "anthropic.resources.messages",
-            "AsyncMessagesWithStreamingResponse.__init__",
-            async_messages_with_streaming_response_init,
+            "anthropic._response",
+            "AsyncResponseContextManager.__aexit__",
+            async_response_context_manager_exit,
         )
 
         # parse() wraps create() internally in the Anthropic SDK and returns a
@@ -186,14 +186,13 @@ class AnthropicInstrumentor(BaseInstrumentor):
             anthropic.resources.messages.AsyncMessages,  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownArgumentType]
             "stream",
         )
-        unwrap(
-            anthropic.resources.messages.MessagesWithStreamingResponse,  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownArgumentType]
-            "__init__",
+        from anthropic._response import (  # pylint: disable=import-outside-toplevel
+            AsyncResponseContextManager,
+            ResponseContextManager,
         )
-        unwrap(
-            anthropic.resources.messages.AsyncMessagesWithStreamingResponse,  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownArgumentType]
-            "__init__",
-        )
+
+        unwrap(ResponseContextManager, "__exit__")
+        unwrap(AsyncResponseContextManager, "__aexit__")
         if self._parse_supported:
             unwrap(
                 anthropic.resources.messages.Messages,  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownArgumentType]

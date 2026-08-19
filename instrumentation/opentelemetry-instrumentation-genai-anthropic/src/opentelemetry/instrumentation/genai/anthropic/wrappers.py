@@ -3,8 +3,7 @@
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from types import TracebackType
 from typing import (
     TYPE_CHECKING,
@@ -50,50 +49,13 @@ if TYPE_CHECKING:
 
 
 ResponseT = TypeVar("ResponseT")
-ResponseT_co = TypeVar("ResponseT_co", covariant=True)
 ResponseFormatT = TypeVar("ResponseFormatT")
 accumulate_event = cast("Callable[..., Message] | None", _sdk_accumulate_event)
-_logger = logging.getLogger(__name__)
 
 
 class _StreamWrapperWithStream(Protocol):
     @property
     def stream(self) -> object: ...
-
-
-class _SyncResponseContextManager(Protocol[ResponseT_co]):
-    def __enter__(self) -> ResponseT_co: ...
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> Any: ...
-
-
-class _AsyncResponseContextManager(Protocol[ResponseT_co]):
-    def __aenter__(self) -> Awaitable[ResponseT_co]: ...
-
-    def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> Awaitable[Any]: ...
-
-
-def _fail_response(response: object | None, error: BaseException) -> None:
-    fail = getattr(response, "_fail", None)
-    if not callable(fail):
-        return
-    try:
-        fail(error)
-    except Exception:
-        _logger.debug(
-            "Failed to record an exception from a streaming response",
-            exc_info=True,
-        )
 
 
 def _set_response_attributes(
@@ -132,64 +94,6 @@ class _AsyncResponseProxy(Generic[ResponseT]):
 
     def __getattr__(self, name: str):
         return getattr(self._response, name)
-
-
-class MessagesStreamingResponseContextManagerWrapper(Generic[ResponseT]):
-    """Preserve caller exceptions across Anthropic's response context manager.
-
-    ``ResponseContextManager.__exit__`` closes the response without forwarding
-    the exception raised inside the ``with`` block.  The raw-response proxy
-    therefore only sees a normal close and records a successful invocation.
-    Give the proxy the exception before delegating to the SDK manager so its
-    normal close hook remains responsible for cleanup without changing the
-    exception visible to the caller.
-    """
-
-    def __init__(self, manager: _SyncResponseContextManager[ResponseT]):
-        self._manager = manager
-        self._response: ResponseT | None = None
-
-    def __enter__(self) -> ResponseT:
-        self._response = self._manager.__enter__()
-        return self._response
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> Any:
-        if exc_val is not None:
-            _fail_response(self._response, exc_val)
-        return self._manager.__exit__(exc_type, exc_val, exc_tb)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._manager, name)
-
-
-class AsyncMessagesStreamingResponseContextManagerWrapper(Generic[ResponseT]):
-    """Async counterpart of ``MessagesStreamingResponseContextManagerWrapper``."""
-
-    def __init__(self, manager: _AsyncResponseContextManager[ResponseT]):
-        self._manager = manager
-        self._response: ResponseT | None = None
-
-    async def __aenter__(self) -> ResponseT:
-        self._response = await self._manager.__aenter__()
-        return self._response
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> Any:
-        if exc_val is not None:
-            _fail_response(self._response, exc_val)
-        return await self._manager.__aexit__(exc_type, exc_val, exc_tb)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._manager, name)
 
 
 class MessageWrapper:

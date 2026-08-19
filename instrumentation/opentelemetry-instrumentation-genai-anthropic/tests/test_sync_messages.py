@@ -13,7 +13,7 @@ import httpx
 import pytest
 from anthropic import Anthropic, APIConnectionError, NotFoundError
 from anthropic._legacy_response import LegacyAPIResponse
-from anthropic._response import APIResponse
+from anthropic._response import APIResponse, ResponseContextManager
 from anthropic._streaming import Stream as AnthropicStream
 from anthropic.resources.messages import Messages as _Messages
 from anthropic.types import (
@@ -236,12 +236,15 @@ def test_sync_messages_streaming_response_is_transparent(
     span_exporter, anthropic_client, instrument_no_content
 ):
     """The streaming proxy must also keep the SDK's type and its parsed stream."""
-    with anthropic_client.messages.with_streaming_response.create(
+    context_manager = anthropic_client.messages.with_streaming_response.create(
         model="claude-sonnet-4-20250514",
         max_tokens=100,
         messages=[{"role": "user", "content": "Say hello in one word."}],
         stream=True,
-    ) as raw_response:
+    )
+    assert isinstance(context_manager, ResponseContextManager)
+    assert context_manager.__class__ is ResponseContextManager
+    with context_manager as raw_response:
         assert isinstance(raw_response, APIResponse)
         assert raw_response.__class__ is APIResponse
         stream = raw_response.parse()
@@ -1801,6 +1804,27 @@ def test_sync_messages_with_streaming_response_user_exception(
     span = spans[0]
     assert span.attributes[GenAIAttributes.GEN_AI_REQUEST_MODEL] == model
     assert span.attributes[ErrorAttributes.ERROR_TYPE] == "ValueError"
+
+
+@pytest.mark.vcr()
+@pytest.mark.cassette("test_sync_messages_create_with_raw_response")
+def test_sync_messages_with_streaming_response_nonstreaming_user_exception(
+    span_exporter, anthropic_client, instrument_no_content
+):
+    """A caller error in a non-streaming response context fails the span."""
+    model = "claude-sonnet-4-20250514"
+
+    with pytest.raises(ValueError, match="User raised exception"):
+        with anthropic_client.messages.with_streaming_response.create(
+            model=model,
+            max_tokens=100,
+            messages=[{"role": "user", "content": "Say hello in one word."}],
+        ):
+            raise ValueError("User raised exception")
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].attributes[ErrorAttributes.ERROR_TYPE] == "ValueError"
 
 
 @pytest.mark.vcr()
