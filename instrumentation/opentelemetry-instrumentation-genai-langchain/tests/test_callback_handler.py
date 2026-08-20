@@ -1150,6 +1150,28 @@ class TestOutputMessagesOnInvocations:
         assert len(assigned) == 1
         assert assigned[0].parts[0].content == "x = 3"
 
+    def test_agent_dict_output_messages_set_on_chain_end(self):
+        handler, _, _, agent_inv = _make_handler()
+        run_id = _run_id()
+
+        handler.on_chain_start(
+            serialized={"name": "math_agent"},
+            inputs={},
+            run_id=run_id,
+            parent_run_id=None,
+            metadata={"agent_name": "math_agent"},
+        )
+
+        handler.on_chain_end(
+            outputs={"messages": [{"role": "assistant", "content": "x = 3"}]},
+            run_id=run_id,
+        )
+
+        assigned = agent_inv.output_messages
+        assert len(assigned) == 1
+        assert assigned[0].role == "assistant"
+        assert assigned[0].parts[0].content == "x = 3"
+
     def test_agent_output_messages_only_last_ai_message(self):
         handler, _, _, agent_inv = _make_handler()
         run_id = _run_id()
